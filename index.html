@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Markdown Viewer</title>
+
+    <!-- 1. GitHub Markdown CSS (다크/라이트 자동 대응) -->
+    <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.6.1/github-markdown.min.css">
+
+    <!-- 2. Highlight.js (코드 블록 구문 강조) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/styles/github-dark.min.css"
+        media="(prefers-color-scheme: dark)">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/styles/github.min.css"
+        media="(prefers-color-scheme: light)">
+
+    <!-- 3. KaTeX (LaTeX 수학 수식 렌더링) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+
+    <style>
+        :root {
+            --bg-color: #ffffff;
+            --border-color: #d0d7de;
+            --btn-bg: #f6f8fa;
+            --btn-text: #24292f;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg-color: #0d1117;
+                --border-color: #30363d;
+                --btn-bg: #21262d;
+                --btn-text: #c9d1d9;
+            }
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+        }
+
+        /* 상단 툴바 */
+        .toolbar {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 24px;
+            background-color: var(--btn-bg);
+            border-bottom: 1px solid var(--border-color);
+            font-size: 14px;
+            color: var(--btn-text);
+        }
+
+        .toolbar .path-info {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 70%;
+        }
+
+        .toolbar button {
+            background-color: #2ea44f;
+            color: #ffffff;
+            border: none;
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .toolbar button:hover {
+            background-color: #2c974b;
+        }
+
+        /* 마크다운 본문 컨테이너 */
+        .markdown-body {
+            box-sizing: border-box;
+            min-width: 200px;
+            max-width: 980px;
+            margin: 0 auto;
+            padding: 45px;
+        }
+
+        @media (max-width: 767px) {
+            .markdown-body {
+                padding: 20px;
+            }
+        }
+
+        /* 로컬 파일 권한 요청 및 안내 박스 */
+        .permission-box {
+            text-align: center;
+            padding: 60px 20px;
+            border: 2px dashed var(--border-color);
+            border-radius: 12px;
+            margin-top: 40px;
+        }
+
+        .permission-box h2 {
+            border-bottom: none;
+            margin-bottom: 12px;
+        }
+
+        .permission-box p {
+            color: #656d76;
+            margin-bottom: 24px;
+        }
+
+        .permission-box .target-file {
+            display: inline-block;
+            background: var(--btn-bg);
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-family: monospace;
+            margin-bottom: 20px;
+        }
+
+        .primary-btn {
+            background-color: #0969da;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .primary-btn:hover {
+            background-color: #085ec2;
+        }
+
+        /* Mermaid 다이어그램 중앙 정렬 */
+        .mermaid {
+            display: flex;
+            justify-content: center;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="toolbar">
+        <div class="path-info" id="path-display">문서 대기 중...</div>
+        <div>
+            <input type="file" id="file-input" accept=".md,.markdown,.txt" style="display: none;">
+            <button id="open-file-btn">📂 로컬 파일 열기</button>
+        </div>
+    </div>
+
+    <article id="content" class="markdown-body"></article>
+
+    <!-- 라이브러리 로드 -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/highlight.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11.3.0/dist/mermaid.min.js"></script>
+
+    <script>
+        // Mermaid 초기화 (시스템 테마 반영)
+        const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        mermaid.initialize({
+            startOnLoad: false,
+            theme: isDark ? 'dark' : 'default',
+            securityLevel: 'loose'
+        });
+
+        // Marked 설정 (GFM 지원)
+        marked.setOptions({
+            gfm: true,
+            breaks: true
+        });
+
+        const contentEl = document.getElementById('content');
+        const pathDisplayEl = document.getElementById('path-display');
+        const fileInputEl = document.getElementById('file-input');
+        const openFileBtn = document.getElementById('open-file-btn');
+
+        // 마크다운 렌더링 파이프라인
+        async function renderMarkdown(rawText, sourceName) {
+            document.title = `${sourceName} - Markdown Viewer`;
+            pathDisplayEl.textContent = `📄 ${sourceName}`;
+
+            // 1. 수식 블록 보호 (Marked 파싱 중 _, * 등이 이탤릭으로 깨지는 현상 방지)
+            const mathBlocks = [];
+            let protectedText = rawText
+                .replace(/\$\$([\s\S]+?)\$\$/g, (match) => {
+                    mathBlocks.push(match);
+                    return `%%%MATH_BLOCK_${mathBlocks.length - 1}%%%`;
+                })
+                .replace(/\$([^\$\n]+?)\$/g, (match) => {
+                    mathBlocks.push(match);
+                    return `%%%MATH_BLOCK_${mathBlocks.length - 1}%%%`;
+                });
+
+            // 2. HTML 변환 및 XSS 정화 (iframe, video 등 임베드 태그 허용)
+            let rawHtml = marked.parse(protectedText);
+            let cleanHtml = DOMPurify.sanitize(rawHtml, {
+                ADD_TAGS: ['iframe', 'video', 'source'],
+                ADD_ATTR: ['allow', 'allowfullscreen', 'frameborder', 'scrolling', 'controls', 'src']
+            });
+
+            // 3. 수식 블록 복원
+            cleanHtml = cleanHtml.replace(/%%%MATH_BLOCK_(\d+)%%%/g, (_, index) => mathBlocks[index]);
+            contentEl.innerHTML = cleanHtml;
+
+            // 4. Mermaid 다이어그램 변환 (```mermaid 코드 블록 처리)
+            const mermaidBlocks = contentEl.querySelectorAll('pre code.language-mermaid');
+            mermaidBlocks.forEach((block) => {
+                const pre = block.parentElement;
+                const div = document.createElement('div');
+                div.className = 'mermaid';
+                div.textContent = block.textContent;
+                pre.replaceWith(div);
+            });
+            if (mermaidBlocks.length > 0) {
+                await mermaid.run({ querySelector: '.mermaid' });
+            }
+
+            // 5. 일반 코드 블록 구문 강조 (Highlight.js)
+            contentEl.querySelectorAll('pre code').forEach((block) => {
+                hljs.highlightElement(block);
+            });
+
+            // 6. KaTeX 수학 수식 렌더링
+            renderMathInElement(contentEl, {
+                delimiters: [
+                    { left: '$$', right: '$$', display: true },
+                    { left: '$', right: '$', display: false },
+                    { left: '\\(', right: '\\)', display: false },
+                    { left: '\\[', right: '\\]', display: true }
+                ],
+                throwOnError: false
+            });
+        }
+
+        // 로컬 파일 권한 요청 UI 표시
+        function promptLocalFilePermission(requestedPath) {
+            pathDisplayEl.textContent = `🔒 접근 권한 필요: ${requestedPath}`;
+            contentEl.innerHTML = `
+        <div class="permission-box">
+          <h2>로컬 파일 접근 권한이 필요합니다</h2>
+          <p>보안 정책상 브라우저가 로컬 경로의 파일을 자동으로 읽을 수 없습니다.<br>아래 버튼을 눌러 해당 파일을 선택해 주세요.</p>
+          ${requestedPath ? `<div class="target-file">요청된 경로: ${requestedPath}</div><br>` : ''}
+          <button class="primary-btn" id="grant-permission-btn">권한 허용 및 파일 선택</button>
+        </div>
+      `;
+
+            document.getElementById('grant-permission-btn').addEventListener('click', triggerFilePicker);
+        }
+
+        // File System Access API 또는 일반 파일 입력창 실행
+        async function triggerFilePicker() {
+            if ('showOpenFilePicker' in window) {
+                try {
+                    const [fileHandle] = await window.showOpenFilePicker({
+                        types: [{
+                            description: 'Markdown Files',
+                            accept: { 'text/markdown': ['.md', '.markdown', '.txt'] }
+                        }],
+                        multiple: false
+                    });
+                    const file = await fileHandle.getFile();
+                    const text = await file.text();
+                    await renderMarkdown(text, file.name);
+                } catch (err) {
+                    if (err.name !== 'AbortError') {
+                        console.error(err);
+                        fileInputEl.click();
+                    }
+                }
+            } else {
+                fileInputEl.click();
+            }
+        }
+
+        // 일반 <input type="file"> 이벤트 처리
+        fileInputEl.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const text = await file.text();
+            await renderMarkdown(text, file.name);
+        });
+
+        openFileBtn.addEventListener('click', triggerFilePicker);
+
+        // URL 판별 유틸리티
+        function isHttpUrl(str) {
+            return /^https?:\/\//i.test(str);
+        }
+
+        // 로컬 절대 경로 판별 (Windows C:\, Unix /Users/, file:// 등)
+        function isLocalFilePath(str) {
+            return /^file:\/\//i.test(str) || /^[a-zA-Z]:[\\/]/.test(str) || str.startsWith('/');
+        }
+
+        // 초기 실행 라우터
+        async function init() {
+            const params = new URLSearchParams(window.location.search);
+            const targetPath = params.get('path');
+
+            if (!targetPath) {
+                promptLocalFilePermission('');
+                return;
+            }
+
+            // 1. file:// 프로토콜로 index.html을 직접 연 경우 -> 권한 요청
+            if (window.location.protocol === 'file:') {
+                promptLocalFilePermission(targetPath);
+                return;
+            }
+
+            // 2. HTTP/HTTPS URL인 경우
+            if (isHttpUrl(targetPath)) {
+                try {
+                    pathDisplayEl.textContent = `🌐 불러오는 중: ${targetPath}`;
+                    const res = await fetch(targetPath);
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    const text = await res.text();
+                    await renderMarkdown(text, targetPath);
+                } catch (err) {
+                    contentEl.innerHTML = `
+            <div class="permission-box">
+              <h2>원격 URL 불러오기 실패</h2>
+              <p>대상 서버의 CORS 제한이거나 잘못된 URL일 수 있습니다. (${err.message})</p>
+              <div class="target-file">${targetPath}</div>
+            </div>
+          `;
+                }
+                return;
+            }
+
+            // 3. 로컬 OS 절대 경로인 경우 -> 권한 요청
+            if (isLocalFilePath(targetPath) && !targetPath.startsWith('./')) {
+                try {
+                    const res = await fetch(targetPath);
+                    if (res.ok) {
+                        const text = await res.text();
+                        await renderMarkdown(text, targetPath);
+                        return;
+                    }
+                } catch (_) { }
+                promptLocalFilePermission(targetPath);
+                return;
+            }
+
+            // 4. 웹 서버 내 상대 경로인 경우
+            try {
+                pathDisplayEl.textContent = `📂 불러오는 중: ${targetPath}`;
+                const res = await fetch(targetPath);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const text = await res.text();
+                await renderMarkdown(text, targetPath);
+            } catch (err) {
+                promptLocalFilePermission(targetPath);
+            }
+        }
+
+        init();
+    </script>
+</body>
+
+</html>
